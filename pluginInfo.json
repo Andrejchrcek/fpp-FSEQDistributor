@@ -11,7 +11,7 @@
 		{
 			"minFPPVersion": "8.0",
 			"maxFPPVersion": "8.99",
-			"branch": "main",
+			"branch": "master",
 			"sha": "",
 			"dependencies": {
 				"plugins": [],
