@@ -15,7 +15,7 @@ $menuEntries = Array(
 	Array(
 		'text' => 'FSEQ Distributor',
 		'type' => 'content',
-		'page' => 'vote.php',
+		'page' => 'config.php',
 		'wrap' => 1
 	)
 );
