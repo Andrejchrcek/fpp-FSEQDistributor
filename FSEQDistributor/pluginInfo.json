@@ -1,30 +1,8 @@
 {
-  "repoName": "fpp-sumup111111",
-  "name": "Announce SumUp1111!",
-  "author": "Michael Jones",
-  "description": "Receive a notification from SumUp android app when payments are made so you can trigger effects via your display",
-  "homeURL": "https://github.com/PiSignage/fpp-sumup",
-  "srcURL": "https://github.com/PiSignage/fpp-sumup.git",
-  "bugURL": "https://github.com/PiSignage/fpp-sumup/issues",
-  "allowUpdates": 1,
-  "versions": [
-    {
-      "minFPPVersion": "5.0",
-      "maxFPPVersion": "7.99",
-      "branch": "master",
-      "sha": ""
-    },
-    {
-      "minFPPVersion": "8.0",
-      "maxFPPVersion": "8.99",
-      "branch": "master",
-      "sha": ""
-    },
-    {
-      "minFPPVersion": "9.0",
-      "maxFPPVersion": "0",
-      "branch": "master",
-      "sha": ""
-    }
-  ]
+  "name": "FSEQ Distributor",
+  "description": "Nastroj na rozdelenie a distribuciu FSEQ suborov na jednotlive controllery podla XLSX layoutu.",
+  "version": "1.0",
+  "author": "Andrej",
+  "page": "plugin_setup.php",
+  "link": "FSEQ Distributor"
 }
