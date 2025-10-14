@@ -1,5 +1,7 @@
 {
   "name": "FSEQ Distributor",
+  "repo": "https://github.com/Andrejchrcek/fpp-FSEQDistributor.git",
+  "branch": "main",
   "description": "Nastroj na rozdelenie a distribuciu FSEQ suborov na jednotlive controllery podla XLSX layoutu.",
   "version": "1.0",
   "author": "Andrej",
