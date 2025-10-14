@@ -1,20 +1,21 @@
 import struct
 import sys
 import os
-import pandas as pd
+import openpyxl
 import re
 import socket
 import requests
 
 def parse_xlsx(file_path):
-    df = pd.read_excel(file_path, header=None)
+    wb = openpyxl.load_workbook(file_path, read_only=True)
+    sheet = wb.active  # Predpokladáme, že dáta sú v prvom hárku
     controllers = {}
     current_controller = None
     current_ip = None
 
-    for _, row in df.iterrows():
-        line = ','.join(row.dropna().astype(str))
-        line = line.strip()
+    for row in sheet.iter_rows(values_only=True):
+        # Spoj hodnoty riadku, ignoruj None, skonvertuj na string
+        line = ','.join(str(cell) for cell in row if cell is not None).strip()
         if not line:
             continue
 
@@ -35,6 +36,7 @@ def parse_xlsx(file_path):
             controllers[current_controller]['ranges'].append((start_chan, num_chans))
 
     controllers = {k: v for k, v in controllers.items() if v['ranges']}
+    wb.close()
     return controllers
 
 def read_fseq_header(f):
