@@ -1,11 +1,12 @@
 {
-  "id": "fpp-FSEQDistributor",
-  "name": "FSEQ Distributor",
-  "author": "Andrej",
-  "version": "1.0.0",
-  "description": "Nastroj na rozdelenie a distribuciu FSEQ suborov na jednotlive controllery podla XLSX layoutu.",
-  "repo": "https://github.com/Andrejchrcek/fpp-FSEQDistributor.git",
-  "branch": "main",
-  "page": "plugin_setup.php",
-  "link": "FSEQ Distributor"
+  "name": "FSEQDistributor",
+  "description": "Plugin na distribúciu FSEQ súborov pre svetelné show v FPP.",
+  "author": "TvojUsername",
+  "homepage": "https://github.com/tvojusername/fpp-FSEQDistributor",
+  "minVersion": "9.0",
+  "maxVersion": "*",
+  "repo": "https://github.com/tvojusername/fpp-FSEQDistributor",
+  "install": "fpp_install.sh",
+  "config": "config.php",
+  "menu": "menu.inc"
 }
