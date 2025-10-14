@@ -1,2 +1,3 @@
 #!/bin/bash
-echo "FSEQDistributor uninstalled successfully."
+rm -rf /home/fpp/media/plugins/fpp-FSEQDistributor/temp
+echo "FSEQDistributor uninstalled."
