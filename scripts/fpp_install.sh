@@ -1,4 +1,6 @@
-#!/bin/bash
+BASEDIR=$(dirname $0)
+cd $BASEDIR
+cd ..
 echo "Updating APT and installing Python dependencies..."
 sudo apt-get update
 sudo apt-get install -y python3-pip
