@@ -9,7 +9,7 @@
   "install": "fpp_install.sh",
   "config": "config.php",
   "menu": "menu.inc"
-"versions": [
+  "versions": [
 		{
 			"minFPPVersion": "3.1",
 			"maxFPPVersion": "0",
