@@ -1,0 +1,8 @@
+{
+  "name": "FSEQ Distributor",
+  "description": "Nastroj na rozdelenie a distribuciu FSEQ suborov na jednotlive controllery podla XLSX layoutu.",
+  "version": "1.0",
+  "author": "Andrej",
+  "page": "plugin_setup.php",
+  "link": "FSEQ Distributor"
+}
