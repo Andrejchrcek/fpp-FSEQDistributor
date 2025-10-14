@@ -1,3 +1,4 @@
 <?php
 $pluginName = basename(dirname(__FILE__));
-$menu["Plugins"]["$pluginName"] = "$pluginName/config.php";
+$menu["Content Setup"]["FSEQ Distributor"] = "$pluginName/config.php";
+?>
