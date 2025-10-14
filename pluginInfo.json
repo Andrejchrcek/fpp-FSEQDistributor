@@ -2,7 +2,7 @@
 	"repoName": "fpp-FSEQDistributor",
 	"name": "FSEQDistributor",
 	"author": "Andrej Chrcek",
-	"description": "Provides the option to allow show viewers to vote for the next song to play",
+	"description": "Plugin for distribution FSEQ files for espixelstick.",
 	"homeURL": "https://github.com/Andrejchrcek/fpp-FSEQDistributor",
 	"srcURL": "https://github.com/Andrejchrcek/fpp-FSEQDistributor.git",
 	"bugURL": "https://github.com/Andrejchrcek/fpp-FSEQDistributor/issues",
