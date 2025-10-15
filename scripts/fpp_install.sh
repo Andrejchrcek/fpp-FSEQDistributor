@@ -13,7 +13,7 @@ sudo apt-get install -y python3-pip >> $LOG_FILE 2>&1
 
 # Nainštaluj Python balíky
 echo "Installing Python packages..." | tee -a $LOG_FILE
-pip3 install --break-system-packages openpyxl requests 2>&1 | tee -a $LOG_FILE
+pip3 install --break-system-packages openpyxl requests-toolbelt requests 2>&1 | tee -a $LOG_FILE
 
 # Vytvor temp priečinok
 mkdir -p temp
