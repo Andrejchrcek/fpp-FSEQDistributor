@@ -10,92 +10,6 @@ if (!is_dir($outputDir)) {
     mkdir($outputDir, 0777, true);
 }
 
-// AJAX endpoint for prop status
-if (isset($_GET['action']) && $_GET['action'] == 'get_status') {
-    header('Content-Type: application/json; charset=utf-8');
-    ob_start(); // Zachytíme akýkoľvek nežiaduci výstup
-    
-    try {
-        // Fetch channel outputs from FPP API (E1.31 config for connected devices/props)
-        $ch = curl_init('http://localhost/api/configfile/co-other.json');
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        $response = curl_exec($ch);
-        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($http_code !== 200 || empty($response)) {
-            throw new Exception("Failed to fetch FPP channel outputs: HTTP $http_code");
-        }
-
-        $json = json_decode($response, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new Exception("Invalid JSON from FPP API: " . json_last_error_msg());
-        }
-
-        // Extract unique unicast IPs (these are the connected props/devices)
-        $ips = [];
-        foreach ($json['channelOutputs'] ?? [] as $output) {
-            if ($output['type'] === 'universes') {
-                foreach ($output['universes'] ?? [] as $universe) {
-                    if ($universe['type'] == 1 && !empty($universe['address'])) { // 1 = unicast
-                        $ips[] = $universe['address'];
-                    }
-                }
-            }
-        }
-        $ips = array_unique($ips);
-
-        // Build devices array with status check
-        $devices = [];
-        foreach ($ips as $index => $ip) {
-            $status = 'offline';
-            $fp = @fsockopen($ip, 80, $errno, $errstr, 1); // Check if HTTP port is open (ESPixelStick web interface)
-            if ($fp) {
-                $status = 'online';
-                fclose($fp);
-            }
-
-            $devices[] = [
-                'name' => 'Prop ' . ($index + 1), // Placeholder name; can be improved if FPP provides descriptions
-                'ip' => $ip,
-                'status' => $status
-                // 'progress' => 0 // Uncomment if needed for uploading status
-            ];
-        }
-
-        // Optionally, merge with status.json if it exists (for dynamic uploading status)
-        $statusFile = $outputDir . "status.json";
-        if (file_exists($statusFile)) {
-            $statusContent = file_get_contents($statusFile);
-            $statusDecoded = json_decode($statusContent, true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($statusDecoded)) {
-                // Merge logic: Update status for matching IPs
-                foreach ($devices as &$device) {
-                    foreach ($statusDecoded as $statusItem) {
-                        if ($statusItem['ip'] === $device['ip']) {
-                            $device['status'] = $statusItem['status'] ?? $device['status'];
-                            if (isset($statusItem['progress'])) {
-                                $device['progress'] = $statusItem['progress'];
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-
-        echo json_encode($devices);
-
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['error' => 'Error loading props: ' . $e->getMessage(), 'devices' => []]);
-    }
-    
-    ob_end_clean(); // Zahodíme akýkoľvek nežiaduci výstup
-    exit; // CRITICAL: Stop here, don't render HTML
-}
-
 // AJAX endpoint for processing
 if (isset($_POST['action']) && $_POST['action'] == 'process') {
     header('Content-Type: application/json');
@@ -114,9 +28,9 @@ if (isset($_POST['action']) && $_POST['action'] == 'process') {
     }
     
     // Run Python script
-    $command = "python3 /home/fpp/media/plugins/$pluginName/parse_fseq.py " . 
-               escapeshellarg($fseqPath) . " " . 
-               escapeshellarg($xlsxPath) . " " . 
+    $command = "python3 /home/fpp/media/plugins/$pluginName/parse_fseq.py " .
+               escapeshellarg($fseqPath) . " " .
+               escapeshellarg($xlsxPath) . " " .
                escapeshellarg($outputDir) . " 2>&1";
     
     $output = shell_exec($command);
@@ -154,7 +68,7 @@ $fseqFiles = glob($sequencesDir . "*.fseq");
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
         }
         
@@ -172,24 +86,12 @@ $fseqFiles = glob($sequencesDir . "*.fseq");
             margin-bottom: 10px;
         }
         
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
-        @media (max-width: 768px) {
-            .grid {
-                grid-template-columns: 1fr;
-            }
-        }
-        
         .card {
             background: white;
             border-radius: 10px;
             padding: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
         }
         
         .card h3 {
@@ -282,131 +184,7 @@ $fseqFiles = glob($sequencesDir . "*.fseq");
             background: #e7ffe7;
             border-left: 4px solid #4CAF50;
         }
-        
-        .device-list {
-            width: 100%;
-        }
-        
-        .device-item {
-            display: flex;
-            align-items: center;
-            padding: 15px;
-            border-bottom: 1px solid #eee;
-            transition: background 0.3s;
-        }
-        
-        .device-item:hover {
-            background: #f9f9f9;
-        }
-        
-        .device-item:last-child {
-            border-bottom: none;
-        }
-        
-        .device-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            margin-right: 15px;
-            color: white;
-        }
-        
-        .device-icon.online {
-            background: #4CAF50;
-        }
-        
-        .device-icon.offline {
-            background: #9e9e9e;
-        }
-        
-        .device-icon.uploading {
-            background: #ff9800;
-            animation: pulse 1.5s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        
-        .device-info {
-            flex: 1;
-        }
-        
-        .device-name {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 5px;
-        }
-        
-        .device-ip {
-            font-size: 12px;
-            color: #999;
-        }
-        
-        .device-status {
-            min-width: 120px;
-            text-align: right;
-        }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        
-        .status-badge.online {
-            background: #e7ffe7;
-            color: #4CAF50;
-        }
-        
-        .status-badge.offline {
-            background: #f0f0f0;
-            color: #9e9e9e;
-        }
-        
-        .status-badge.uploading {
-            background: #fff3e0;
-            color: #ff9800;
-        }
-        
-        .progress-bar {
-            width: 100%;
-            height: 6px;
-            background: #eee;
-            border-radius: 3px;
-            overflow: hidden;
-            margin-top: 8px;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            transition: width 0.5s;
-        }
-        
-        .refresh-btn {
-            background: #f0f0f0;
-            color: #333;
-            padding: 8px 15px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-bottom: 15px;
-        }
-        
-        .refresh-btn:hover {
-            background: #e0e0e0;
-        }
-        
+
         pre {
             background: #f5f5f5;
             padding: 15px;
@@ -415,33 +193,6 @@ $fseqFiles = glob($sequencesDir . "*.fseq");
             font-size: 12px;
             max-height: 400px;
             overflow-y: auto;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #999;
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #999;
-        }
-        
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 10px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
         }
         
         details {
@@ -466,65 +217,49 @@ $fseqFiles = glob($sequencesDir . "*.fseq");
     
     <div id="resultMessage"></div>
     
-    <div class="grid">
-        <!-- Form -->
-        <div class="card">
-            <h3>📤 Process and Upload</h3>
-            
-            <div class="alert info">
-                <strong>ℹ️ Instructions:</strong><br>
-                1. Upload XLSX to <code>~/media/upload/</code><br>
-                2. FSEQ files in <code>~/media/sequences/</code><br>
-                3. Select files and process
-            </div>
-            
-            <form id="uploadForm" onsubmit="return false;">
-                <div class="form-group">
-                    <label>📊 XLSX File (Prop Connections):</label>
-                    <select name="xlsx" id="xlsxSelect" required>
-                        <option value="">-- Select file --</option>
-                        <?php foreach ($xlsxFiles as $file): ?>
-                            <option value="<?php echo htmlspecialchars(basename($file)); ?>">
-                                <?php echo htmlspecialchars(basename($file)); ?>
-                            </option>
-                        <?php endforeach; ?>
-                        <?php if (empty($xlsxFiles)): ?>
-                            <option value="" disabled>⚠️ No XLSX files found</option>
-                        <?php endif; ?>
-                    </select>
-                </div>
-                
-                <div class="form-group">
-                    <label>🎵 FSEQ File:</label>
-                    <select name="fseq" id="fseqSelect" required>
-                        <option value="">-- Select file --</option>
-                        <?php foreach ($fseqFiles as $file): ?>
-                            <option value="<?php echo htmlspecialchars(basename($file)); ?>">
-                                <?php echo htmlspecialchars(basename($file)); ?>
-                            </option>
-                        <?php endforeach; ?>
-                        <?php if (empty($fseqFiles)): ?>
-                            <option value="" disabled>⚠️ No FSEQ files found</option>
-                        <?php endif; ?>
-                    </select>
-                </div>
-                
-                <button type="button" class="btn" id="submitBtn" onclick="processFiles()">🚀 Upload Show</button>
-            </form>
+    <div class="card">
+        <h3>📤 Process and Upload</h3>
+        
+        <div class="alert info">
+            <strong>ℹ️ Instructions:</strong><br>
+            1. Upload XLSX to <code>~/media/upload/</code><br>
+            2. FSEQ files in <code>~/media/sequences/</code><br>
+            3. Select files and process
         </div>
         
-        <!-- Prop Status -->
-        <div class="card">
-            <h3>🎛️ Prop Status</h3>
-            <button class="refresh-btn" onclick="refreshDevices()">🔄 Refresh</button>
-            
-            <div id="device-list" class="device-list">
-                <div class="loading">
-                    <div class="spinner"></div>
-                    Loading...
-                </div>
+        <form id="uploadForm" onsubmit="return false;">
+            <div class="form-group">
+                <label>📊 XLSX File (Prop Connections):</label>
+                <select name="xlsx" id="xlsxSelect" required>
+                    <option value="">-- Select file --</option>
+                    <?php foreach ($xlsxFiles as $file): ?>
+                        <option value="<?php echo htmlspecialchars(basename($file)); ?>">
+                            <?php echo htmlspecialchars(basename($file)); ?>
+                        </option>
+                    <?php endforeach; ?>
+                    <?php if (empty($xlsxFiles)): ?>
+                        <option value="" disabled>⚠️ No XLSX files found</option>
+                    <?php endif; ?>
+                </select>
             </div>
-        </div>
+            
+            <div class="form-group">
+                <label>🎵 FSEQ File:</label>
+                <select name="fseq" id="fseqSelect" required>
+                    <option value="">-- Select file --</option>
+                    <?php foreach ($fseqFiles as $file): ?>
+                        <option value="<?php echo htmlspecialchars(basename($file)); ?>">
+                            <?php echo htmlspecialchars(basename($file)); ?>
+                        </option>
+                    <?php endforeach; ?>
+                    <?php if (empty($fseqFiles)): ?>
+                        <option value="" disabled>⚠️ No FSEQ files found</option>
+                    <?php endif; ?>
+                </select>
+            </div>
+            
+            <button type="button" class="btn" id="submitBtn" onclick="processFiles()">🚀 Upload Show</button>
+        </form>
     </div>
 </div>
 
@@ -581,67 +316,12 @@ function processFiles() {
         html += '</div>';
         resultDiv.innerHTML = html;
         
-        // Refresh device list
-        refreshDevices();
     })
     .catch(error => {
         btn.disabled = false;
         btn.innerHTML = '🚀 Upload Show';
         resultDiv.innerHTML = `<div class="alert error">❌ Error: ${error.message}</div>`;
     });
-}
-
-function refreshDevices() {
-    fetch('?action=get_status')
-        .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            return response.text(); // Najprv ako text pre debug
-        })
-        .then(text => {
-            let devices;
-            try {
-                devices = JSON.parse(text);
-            } catch (e) {
-                console.error('Raw response:', text); // Log raw odpoveď
-                throw new Error('Invalid JSON response: ' + e.message);
-            }
-            
-            const container = document.getElementById('device-list');
-            if (devices.error || !devices || devices.length === 0) {
-                container.innerHTML = '<div class="empty-state">No props found<br><small>' + 
-                    (devices.error || 'Upload a show to see connected props') + '</small></div>';
-                return;
-            }
-            
-            container.innerHTML = devices.map(device => `
-                <div class="device-item">
-                    <div class="device-icon ${device.status}">
-                        ${device.status === 'online' ? '✓' : device.status === 'uploading' ? '↑' : '✗'}
-                    </div>
-                    <div class="device-info">
-                        <div class="device-name">${escapeHtml(device.name)}</div>
-                        <div class="device-ip">${escapeHtml(device.ip)}</div>
-                        ${device.status === 'uploading' && device.progress !== undefined ? `
-                            <div class="progress-bar">
-                                <div class="progress-fill" style="width: ${device.progress}%"></div>
-                            </div>
-                        ` : ''}
-                    </div>
-                    <div class="device-status">
-                        <span class="status-badge ${device.status}">
-                            ${device.status === 'online' ? 'Ready' : 
-                              device.status === 'uploading' ? 'Uploading ' + (device.progress || 0) + '%' : 
-                              'Offline'}
-                        </span>
-                    </div>
-                </div>
-            `).join('');
-        })
-        .catch(err => {
-            console.error('Error loading props:', err);
-            document.getElementById('device-list').innerHTML = 
-                `<div class="empty-state">Error loading props<br><small>${err.message}</small></div>`;
-        });
 }
 
 function escapeHtml(text) {
@@ -652,12 +332,10 @@ function escapeHtml(text) {
         '"': '&quot;',
         "'": '&#039;'
     };
-    return text.replace(/[&<>"']/g, m => map[m]);
+    // Zabezpečí, že ak je vstup undefined/null, vráti prázdny reťazec
+    if (text === undefined || text === null) return '';
+    return text.toString().replace(/[&<>"']/g, m => map[m]);
 }
-
-// Initial load and auto-refresh every 3 seconds
-refreshDevices();
-setInterval(refreshDevices, 3000);
 </script>
 
 </body>
