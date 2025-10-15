@@ -1,72 +1,65 @@
 <?php
 $pluginName = "fpp-FSEQDistributor";
-include_once 'common/easyui_functions.php';
 
 $uploadDir = "/home/fpp/media/upload/";
 $sequencesDir = "/home/fpp/media/sequences/";
 $outputDir = "/home/fpp/media/plugins/$pluginName/temp/";
 
-// Vytvor output priečinok ak neexistuje
+// Create output directory if not exists
 if (!is_dir($outputDir)) {
     mkdir($outputDir, 0777, true);
 }
 
-// Získaj zoznam súborov
+// Get file lists
 $xlsxFiles = glob($uploadDir . "*.xlsx");
 $fseqFiles = glob($sequencesDir . "*.fseq");
 
-// AJAX endpoint pre status zariadení
+// AJAX endpoint for prop status
 if (isset($_GET['action']) && $_GET['action'] == 'get_status') {
     header('Content-Type: application/json');
     
-    // Tu načítaj status zariadení (napríklad z log súboru alebo DB)
-    // Zatiaľ mock data
-    $devices = [
-        ['name' => 'Controller_1', 'ip' => '192.168.1.100', 'status' => 'online', 'progress' => 100],
-        ['name' => 'Controller_2', 'ip' => '192.168.1.101', 'status' => 'uploading', 'progress' => 65],
-        ['name' => 'Controller_3', 'ip' => '192.168.1.102', 'status' => 'offline', 'progress' => 0],
-    ];
-    
-    echo json_encode($devices);
+    // Read status from JSON file (created by Python script)
+    $statusFile = $outputDir . "status.json";
+    if (file_exists($statusFile)) {
+        $content = file_get_contents($statusFile);
+        echo $content;
+    } else {
+        echo json_encode([]);
+    }
     exit;
 }
 
+// Handle form submission
+$processResult = null;
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POST['xlsx'])) {
     $fseqPath = $sequencesDir . basename($_POST['fseq']);
     $xlsxPath = $uploadDir . basename($_POST['xlsx']);
     
     if (!file_exists($fseqPath)) {
-        echo "<div class='alert error'>❌ FSEQ súbor neexistuje: $fseqPath</div>";
-        exit;
-    }
-    if (!file_exists($xlsxPath)) {
-        echo "<div class='alert error'>❌ XLSX súbor neexistuje: $xlsxPath</div>";
-        exit;
-    }
-    
-    // Spusti Python skript
-    $command = "python3 /home/fpp/media/plugins/$pluginName/parse_fseq.py " . 
-               escapeshellarg($fseqPath) . " " . 
-               escapeshellarg($xlsxPath) . " " . 
-               escapeshellarg($outputDir) . " 2>&1";
-    
-    echo "<div class='alert info'>";
-    echo "<strong>🚀 Spracovávam...</strong><br>";
-    echo "FSEQ: " . basename($fseqPath) . "<br>";
-    echo "XLSX: " . basename($xlsxPath) . "<br><br>";
-    
-    $output = shell_exec($command);
-    
-    if (strpos($output, 'Error') !== false || strpos($output, 'Traceback') !== false) {
-        echo "<strong style='color: red;'>❌ Chyba:</strong><br>";
+        $processResult = ['success' => false, 'message' => "FSEQ file not found: $fseqPath"];
+    } elseif (!file_exists($xlsxPath)) {
+        $processResult = ['success' => false, 'message' => "XLSX file not found: $xlsxPath"];
     } else {
-        echo "<strong style='color: green;'>✅ Hotovo!</strong><br>";
+        // Run Python script
+        $command = "python3 /home/fpp/media/plugins/$pluginName/parse_fseq.py " . 
+                   escapeshellarg($fseqPath) . " " . 
+                   escapeshellarg($xlsxPath) . " " . 
+                   escapeshellarg($outputDir) . " 2>&1";
+        
+        $output = shell_exec($command);
+        
+        $success = !(strpos($output, 'Error') !== false || strpos($output, 'Traceback') !== false);
+        
+        $processResult = [
+            'success' => $success,
+            'message' => $success ? 'Processing completed successfully!' : 'Error occurred during processing',
+            'output' => $output,
+            'fseq' => basename($fseqPath),
+            'xlsx' => basename($xlsxPath)
+        ];
     }
-    echo "<pre>$output</pre>";
-    echo "</div>";
 }
 ?>
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -175,6 +168,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
         .alert {
             padding: 15px;
             border-radius: 5px;
@@ -213,6 +212,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
             background: #f9f9f9;
         }
         
+        .device-item:last-child {
+            border-bottom: none;
+        }
+        
         .device-icon {
             width: 40px;
             height: 40px;
@@ -222,6 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
             justify-content: center;
             font-size: 20px;
             margin-right: 15px;
+            color: white;
         }
         
         .device-icon.online {
@@ -258,7 +262,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
         }
         
         .device-status {
-            min-width: 100px;
+            min-width: 120px;
             text-align: right;
         }
         
@@ -322,6 +326,35 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
             border-radius: 5px;
             overflow-x: auto;
             font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -330,64 +363,82 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
 <div class="container">
     <div class="header">
         <h1>🎄 FSEQ Distributor</h1>
-        <p>Distribúcia FSEQ súborov na ESPixelStick kontroléry</p>
+        <p>Distribute FSEQ files to ESPixelStick Props</p>
     </div>
     
+    <?php if ($processResult): ?>
+        <div class="alert <?php echo $processResult['success'] ? 'success' : 'error'; ?>">
+            <strong><?php echo $processResult['success'] ? '✅ Success!' : '❌ Error!'; ?></strong><br>
+            <?php echo htmlspecialchars($processResult['message']); ?><br>
+            <?php if (isset($processResult['fseq'])): ?>
+                <small>FSEQ: <?php echo htmlspecialchars($processResult['fseq']); ?></small><br>
+                <small>XLSX: <?php echo htmlspecialchars($processResult['xlsx']); ?></small>
+            <?php endif; ?>
+            <?php if (isset($processResult['output'])): ?>
+                <details style="margin-top: 10px;">
+                    <summary style="cursor: pointer;">Show details</summary>
+                    <pre><?php echo htmlspecialchars($processResult['output']); ?></pre>
+                </details>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+    
     <div class="grid">
-        <!-- Formulár -->
+        <!-- Form -->
         <div class="card">
-            <h3>📤 Spracovanie a distribúcia</h3>
+            <h3>📤 Process and Upload</h3>
             
             <div class="alert info">
-                <strong>ℹ️ Návod:</strong><br>
-                1. Nahraj XLSX do <code>/home/fpp/media/upload/</code><br>
-                2. FSEQ sú v <code>/home/fpp/media/sequences/</code><br>
-                3. Vyber súbory a spracuj
+                <strong>ℹ️ Instructions:</strong><br>
+                1. Upload XLSX to <code>~/media/upload/</code><br>
+                2. FSEQ files in <code>~/media/sequences/</code><br>
+                3. Select files and process
             </div>
             
-            <form method="post">
+            <form method="post" id="uploadForm">
                 <div class="form-group">
-                    <label>📊 XLSX súbor (Controller Connections):</label>
+                    <label>📊 XLSX File (Prop Connections):</label>
                     <select name="xlsx" required>
-                        <option value="">-- Vyber súbor --</option>
+                        <option value="">-- Select file --</option>
                         <?php foreach ($xlsxFiles as $file): ?>
-                            <option value="<?php echo basename($file); ?>">
-                                <?php echo basename($file); ?>
+                            <option value="<?php echo htmlspecialchars(basename($file)); ?>">
+                                <?php echo htmlspecialchars(basename($file)); ?>
                             </option>
                         <?php endforeach; ?>
                         <?php if (empty($xlsxFiles)): ?>
-                            <option value="" disabled>⚠️ Žiadne XLSX súbory</option>
+                            <option value="" disabled>⚠️ No XLSX files found</option>
                         <?php endif; ?>
                     </select>
                 </div>
                 
                 <div class="form-group">
-                    <label>🎵 FSEQ súbor:</label>
+                    <label>🎵 FSEQ File:</label>
                     <select name="fseq" required>
-                        <option value="">-- Vyber súbor --</option>
+                        <option value="">-- Select file --</option>
                         <?php foreach ($fseqFiles as $file): ?>
-                            <option value="<?php echo basename($file); ?>">
-                                <?php echo basename($file); ?>
+                            <option value="<?php echo htmlspecialchars(basename($file)); ?>">
+                                <?php echo htmlspecialchars(basename($file)); ?>
                             </option>
                         <?php endforeach; ?>
                         <?php if (empty($fseqFiles)): ?>
-                            <option value="" disabled>⚠️ Žiadne FSEQ súbory</option>
+                            <option value="" disabled>⚠️ No FSEQ files found</option>
                         <?php endif; ?>
                     </select>
                 </div>
                 
-                <button type="submit" class="btn">🚀 Spracovať a distribuovať</button>
+                <button type="submit" class="btn" id="submitBtn">🚀 Upload Show</button>
             </form>
         </div>
         
-        <!-- Status zariadení -->
+        <!-- Prop Status -->
         <div class="card">
-            <h3>🎛️ Status kontrolérov</h3>
-            <button class="refresh-btn" onclick="refreshDevices()">🔄 Obnoviť</button>
+            <h3>🎛️ Prop Status</h3>
+            <button class="refresh-btn" onclick="refreshDevices()">🔄 Refresh</button>
             
             <div id="device-list" class="device-list">
-                <div style="text-align: center; padding: 40px; color: #999;">
-                    Načítavam...
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading...
                 </div>
             </div>
         </div>
@@ -401,8 +452,8 @@ function refreshDevices() {
         .then(devices => {
             const container = document.getElementById('device-list');
             
-            if (devices.length === 0) {
-                container.innerHTML = '<div style="text-align: center; padding: 40px; color: #999;">Žiadne zariadenia</div>';
+            if (!devices || devices.length === 0) {
+                container.innerHTML = '<div class="empty-state">No props found<br><small>Upload a show to see connected props</small></div>';
                 return;
             }
             
@@ -414,7 +465,7 @@ function refreshDevices() {
                     <div class="device-info">
                         <div class="device-name">${device.name}</div>
                         <div class="device-ip">${device.ip}</div>
-                        ${device.status === 'uploading' ? `
+                        ${device.status === 'uploading' && device.progress !== undefined ? `
                             <div class="progress-bar">
                                 <div class="progress-fill" style="width: ${device.progress}%"></div>
                             </div>
@@ -422,20 +473,31 @@ function refreshDevices() {
                     </div>
                     <div class="device-status">
                         <span class="status-badge ${device.status}">
-                            ${device.status === 'online' ? 'Online' : device.status === 'uploading' ? 'Nahrávam ' + device.progress + '%' : 'Offline'}
+                            ${device.status === 'online' ? 'Ready' : 
+                              device.status === 'uploading' ? 'Uploading ' + (device.progress || 0) + '%' : 
+                              'Offline'}
                         </span>
                     </div>
                 </div>
             `).join('');
         })
         .catch(err => {
-            console.error('Chyba:', err);
+            console.error('Error loading props:', err);
+            document.getElementById('device-list').innerHTML = 
+                '<div class="empty-state">Error loading props<br><small>' + err.message + '</small></div>';
         });
 }
 
-// Refresh každých 5 sekúnd
+// Disable button during submission
+document.getElementById('uploadForm').addEventListener('submit', function() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Processing...';
+});
+
+// Initial load and auto-refresh every 3 seconds
 refreshDevices();
-setInterval(refreshDevices, 5000);
+setInterval(refreshDevices, 3000);
 </script>
 
 </body>
