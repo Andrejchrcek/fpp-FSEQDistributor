@@ -190,7 +190,6 @@ def is_device_online(ip, port=80, timeout=3):
     except:
         return False
 
-# ZMENA: Pridaný parameter upload_filename
 def upload_fseq_via_http(ip, fseq_path, upload_filename):
     try:
         url = f'http://{ip}/upload'
@@ -200,7 +199,6 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename):
             'cookie': 'advancedMode=true'
         }
         with open(fseq_path, 'rb') as file:
-            # ZMENA: Použitie upload_filename namiesto os.path.basename(fseq_path)
             files = {'file': (upload_filename, file, 'application/octet-stream')}
             
             print(f"Uploading {upload_filename} from {fseq_path} to {url}...")
@@ -212,45 +210,68 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename):
         print(f"HTTP upload failed for {ip}: {e}")
         return False
 
-if __name__ == "__main__":
-    if len(sys.argv) != 4:
-        print("Usage: python create_sparse_fseq.py input.fseq input.xlsx output_dir")
-        sys.exit(1)
-    
-    input_fseq = sys.argv[1]
-    input_xlsx = sys.argv[2]
-    output_dir = sys.argv[3]
+# NOVÁ HLAVNÁ LOGIKA S POUŽITÍM ARUMENTOV
+def process_upload(input_fseq, input_xlsx, output_dir, target_controller=None):
     os.makedirs(output_dir, exist_ok=True)
-    
-    # NOVINKA: Získame pôvodný názov FSEQ súboru
-    original_fseq_name = os.path.basename(input_fseq) 
-    
     controllers = parse_xlsx(input_xlsx)
+    original_fseq_name = os.path.basename(input_fseq)
     
+    if target_controller:
+        # Režim pre jeden kontrolér
+        controllers = {target_controller: controllers.get(target_controller)}
+        if controllers.get(target_controller) is None:
+            print(f"Error: Controller '{target_controller}' not found in {input_xlsx}")
+            return
+        print(f"Processing only controller: {target_controller}")
+    
+    upload_list = {}
+    
+    # 1. Vytvorenie odľahčených FSEQ súborov
     with open(input_fseq, 'rb') as f:
         header = read_fseq_header(f)
         for ctrl_name, info in controllers.items():
-            ranges = info['ranges']
-            if not ranges:
+            if info is None or 'ranges' not in info or not info['ranges']:
                 continue
-            f.seek(0) # Resetni pozíciu pred extrahovaním ďalšieho kontroléra
+            
+            f.seek(0)
+            ranges = info['ranges']
             extracted = extract_data_for_ranges(f, header, ranges)
             output_path = os.path.join(output_dir, f"{ctrl_name}.fseq")
             write_sparse_fseq(output_path, header, extracted, ranges)
             print(f"Created {output_path} for {ctrl_name} ({info['ip']}) with {len(ranges)} ranges, total channels: {sum(r[1] for r in ranges)}")
-    
+            upload_list[ctrl_name] = {'ip': info['ip'], 'path': output_path}
+
+    # 2. Nahrávanie (len pre ESPixelStick)
     print("\nChecking and uploading to ESPixelStick devices...")
-    for ctrl_name, info in controllers.items():
-        if 'ESPixelStick' in info['ip']:
-            ip = info['ip'].split()[0]
-            output_path = os.path.join(output_dir, f"{ctrl_name}.fseq")
+    for ctrl_name, info in upload_list.items():
+        ip_full = info['ip']
+        output_path = info['path']
+        
+        if 'ESPixelStick' in ip_full:
+            ip = ip_full.split()[0]
             
             if is_device_online(ip):
                 print(f"{ctrl_name} at {ip} is online. Attempting HTTP upload...")
-                # ZMENA: Volanie funkcie s pôvodným názvom súboru
                 if upload_fseq_via_http(ip, output_path, original_fseq_name):
                     print(f"Successfully uploaded {output_path} as {original_fseq_name} to {ctrl_name} at {ip}")
                 else:
                     print(f"Upload failed for {ctrl_name} at {ip}")
             else:
                 print(f"{ctrl_name} at {ip} is not online or unreachable")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) not in (4, 5):
+        print("Usage: python create_sparse_fseq.py input.fseq input.xlsx output_dir [target_controller_name]")
+        sys.exit(1)
+    
+    input_fseq = sys.argv[1]
+    input_xlsx = sys.argv[2]
+    output_dir = sys.argv[3]
+    
+    target_controller = None
+    if len(sys.argv) == 5:
+        target_controller = sys.argv[4]
+        print(f"Targeting specific controller: {target_controller}")
+
+    process_upload(input_fseq, input_xlsx, output_dir, target_controller)
