@@ -12,14 +12,87 @@ if (!is_dir($outputDir)) {
 
 // AJAX endpoint for prop status
 if (isset($_GET['action']) && $_GET['action'] == 'get_status') {
-    header('Content-Type: application/json');
+    header('Content-Type: application/json; charset=utf-8');
+    ob_start(); // Zachytíme akýkoľvek nežiaduci výstup
     
-    $statusFile = $outputDir . "status.json";
-    if (file_exists($statusFile)) {
-        echo file_get_contents($statusFile);
-    } else {
-        echo json_encode([]);
+    try {
+        // Fetch channel outputs from FPP API (E1.31 config for connected devices/props)
+        $ch = curl_init('http://localhost/api/configfile/co-other.json');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($http_code !== 200 || empty($response)) {
+            throw new Exception("Failed to fetch FPP channel outputs: HTTP $http_code");
+        }
+
+        $json = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new Exception("Invalid JSON from FPP API: " . json_last_error_msg());
+        }
+
+        // Extract unique unicast IPs (these are the connected props/devices)
+        $ips = [];
+        foreach ($json['channelOutputs'] ?? [] as $output) {
+            if ($output['type'] === 'universes') {
+                foreach ($output['universes'] ?? [] as $universe) {
+                    if ($universe['type'] == 1 && !empty($universe['address'])) { // 1 = unicast
+                        $ips[] = $universe['address'];
+                    }
+                }
+            }
+        }
+        $ips = array_unique($ips);
+
+        // Build devices array with status check
+        $devices = [];
+        foreach ($ips as $index => $ip) {
+            $status = 'offline';
+            $fp = @fsockopen($ip, 80, $errno, $errstr, 1); // Check if HTTP port is open (ESPixelStick web interface)
+            if ($fp) {
+                $status = 'online';
+                fclose($fp);
+            }
+
+            $devices[] = [
+                'name' => 'Prop ' . ($index + 1), // Placeholder name; can be improved if FPP provides descriptions
+                'ip' => $ip,
+                'status' => $status
+                // 'progress' => 0 // Uncomment if needed for uploading status
+            ];
+        }
+
+        // Optionally, merge with status.json if it exists (for dynamic uploading status)
+        $statusFile = $outputDir . "status.json";
+        if (file_exists($statusFile)) {
+            $statusContent = file_get_contents($statusFile);
+            $statusDecoded = json_decode($statusContent, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($statusDecoded)) {
+                // Merge logic: Update status for matching IPs
+                foreach ($devices as &$device) {
+                    foreach ($statusDecoded as $statusItem) {
+                        if ($statusItem['ip'] === $device['ip']) {
+                            $device['status'] = $statusItem['status'] ?? $device['status'];
+                            if (isset($statusItem['progress'])) {
+                                $device['progress'] = $statusItem['progress'];
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        echo json_encode($devices);
+
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Error loading props: ' . $e->getMessage(), 'devices' => []]);
     }
+    
+    ob_end_clean(); // Zahodíme akýkoľvek nežiaduci výstup
     exit; // CRITICAL: Stop here, don't render HTML
 }
 
@@ -482,7 +555,10 @@ function processFiles() {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        return response.json();
+    })
     .then(data => {
         btn.disabled = false;
         btn.innerHTML = '🚀 Upload Show';
@@ -518,14 +594,22 @@ function processFiles() {
 function refreshDevices() {
     fetch('?action=get_status')
         .then(response => {
-            if (!response.ok) throw new Error('Network error');
-            return response.json();
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            return response.text(); // Najprv ako text pre debug
         })
-        .then(devices => {
-            const container = document.getElementById('device-list');
+        .then(text => {
+            let devices;
+            try {
+                devices = JSON.parse(text);
+            } catch (e) {
+                console.error('Raw response:', text); // Log raw odpoveď
+                throw new Error('Invalid JSON response: ' + e.message);
+            }
             
-            if (!devices || devices.length === 0) {
-                container.innerHTML = '<div class="empty-state">No props found<br><small>Upload a show to see connected props</small></div>';
+            const container = document.getElementById('device-list');
+            if (devices.error || !devices || devices.length === 0) {
+                container.innerHTML = '<div class="empty-state">No props found<br><small>' + 
+                    (devices.error || 'Upload a show to see connected props') + '</small></div>';
                 return;
             }
             
@@ -556,7 +640,7 @@ function refreshDevices() {
         .catch(err => {
             console.error('Error loading props:', err);
             document.getElementById('device-list').innerHTML = 
-                '<div class="empty-state">Error loading props<br><small>' + err.message + '</small></div>';
+                `<div class="empty-state">Error loading props<br><small>${err.message}</small></div>`;
         });
 }
 
