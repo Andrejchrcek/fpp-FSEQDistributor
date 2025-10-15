@@ -7,36 +7,31 @@ import socket
 import requests
 import json
 from datetime import datetime
+# POTREBNÉ IMPORTY PRE PROGRESS TRACKING
+from requests_toolbelt.multipart.encoder import MultipartEncoder
+from requests_toolbelt.multipart.encoder import MultipartEncoderMonitor 
 
 status_file = "/home/fpp/media/plugins/fpp-FSEQDistributor/temp/status.json"
-
-# NOVÁ GLOBÁLNA PREMENNÁ pre cestu k Job Status súboru
-job_status_file_path = None 
+job_status_file_path = None # Globálna premenná pre cestu k Job Status súboru
 
 def update_status(props):
     """Update status.json with current prop states"""
     with open(status_file, 'w') as f:
         json.dump(props, f)
 
-# NOVÁ FUNKCIA na aktualizáciu stavu Jobu
 def update_job_status(status_data):
+    """Aktualizuje JSON súbor so stavom prebiehajúcej úlohy."""
     global job_status_file_path
     if job_status_file_path:
         try:
             status_data['timestamp'] = datetime.now().isoformat()
+            # Zápis statusu do TEMP adresára
             with open(job_status_file_path, 'w') as f:
                 json.dump(status_data, f, indent=4)
         except Exception as e:
-            # V produkčnom kóde by sa to malo logovať, ale pre stručnosť to ignorujeme
             print(f"Error updating job status file: {e}")
-    # Else: Ak job_status_file_path nie je nastavený, nedeje sa nič
-
-# Ostatné funkcie (parse_xlsx, read_fseq_header, extract_data_for_ranges, write_sparse_fseq, is_device_online, upload_fseq_via_http) zostávajú nezmenené...
-# Z dôvodu prehľadnosti a krátkosti ich neopakujem, ale v tvojom súbore zostávajú na svojom mieste.
-
 
 def parse_xlsx(file_path):
-    # ... (Kód funkcie parse_xlsx zostáva nezmenený) ...
     wb = openpyxl.load_workbook(file_path, read_only=True)
     sheet = wb.active  # Predpokladáme, že dáta sú v prvom hárku
     controllers = {}
@@ -44,7 +39,6 @@ def parse_xlsx(file_path):
     current_ip = None
 
     for row in sheet.iter_rows(values_only=True):
-        # Spoj hodnoty riadku, ignoruj None, skonvertuj na string
         line = ','.join(str(cell) for cell in row if cell is not None).strip()
         if not line:
             continue
@@ -70,7 +64,6 @@ def parse_xlsx(file_path):
     return controllers
 
 def read_fseq_header(f):
-    # ... (Kód funkcie read_fseq_header zostáva nezmenený) ...
     f.seek(0)
     header = f.read(32)
     if len(header) < 32:
@@ -126,7 +119,6 @@ def read_fseq_header(f):
     }
 
 def extract_data_for_ranges(f, header, ranges):
-    # ... (Kód funkcie extract_data_for_ranges zostáva nezmenený) ...
     frame_size = header['channel_count']
     extracted = bytearray()
     
@@ -198,7 +190,6 @@ def write_sparse_fseq(output_path, header, extracted_data, ranges):
         f.write(header_bytes)
         f.write(comp_data)
         f.write(sparse_data)
-        # OPRAVA PREKLEPU: Používam 'pad_var' namiesto 'pad_pad_var'
         f.write(var_data[:-pad_var] if pad_var > 0 else var_data) 
         current_pos = f.tell()
         pad_needed = data_offset - current_pos
@@ -206,7 +197,6 @@ def write_sparse_fseq(output_path, header, extracted_data, ranges):
         f.write(extracted_data)
 
 def is_device_online(ip, port=80, timeout=3):
-    # ... (Kód funkcie is_device_online zostáva nezmenený) ...
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
@@ -216,8 +206,8 @@ def is_device_online(ip, port=80, timeout=3):
     except:
         return False
 
-def upload_fseq_via_http(ip, fseq_path, upload_filename):
-    # ... (Kód funkcie upload_fseq_via_http zostáva nezmenený) ...
+# OPRAVENÁ FUNKCIA NA NAHRÁVANIE S MONITOROM (kompatibilná so staršou verziou)
+def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_uploads, current_upload_index):
     try:
         url = f'http://{ip}/upload'
         headers = {
@@ -225,27 +215,61 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename):
             'x-requested-with': 'XMLHttpRequest',
             'cookie': 'advancedMode=true'
         }
-        with open(fseq_path, 'rb') as file:
-            files = {'file': (upload_filename, file, 'application/octet-stream')}
-            
-            print(f"Uploading {upload_filename} from {fseq_path} to {url}...")
-            response = requests.post(url, files=files, headers=headers, timeout=300)
-            response.raise_for_status()
-            print(f"Successfully uploaded {upload_filename} to {ip} (Status: {response.status_code})")
-            return True
+        
+        file_size = os.path.getsize(fseq_path)
+        
+        # Funkcia, ktorá sa volá pri odosielaní každého bloku dát
+        def progress_callback(monitor):
+            if monitor.len:
+                local_progress = monitor.bytes_read / monitor.len
+                
+                # Výpočet globálneho progressu v rozsahu 50% až 99%
+                chunk_progress = 49 / total_uploads
+                
+                global_progress_base = 50 + (current_upload_index - 1) * chunk_progress
+                global_progress = global_progress_base + (local_progress * chunk_progress)
+
+                global_progress = min(global_progress, 99) 
+                
+                update_job_status({
+                    "status": "uploading",
+                    "progress": int(global_progress),
+                    "message": f"Uploading to: {ctrl_name} ({ip}). Sent: {int(monitor.bytes_read / 1024)}KB / {int(file_size / 1024)}KB",
+                    "total_controllers": total_uploads,
+                    "current_controller": current_upload_index
+                })
+        
+        # 1. Vytvorenie základného MultipartEncoder
+        m = MultipartEncoder(
+            fields={'file': (upload_filename, open(fseq_path, 'rb'), 'application/octet-stream')}
+        )
+
+        # 2. Zabaliť ho do monitoru (použitie staršej metódy bez 'callback' argumentu)
+        monitor = MultipartEncoderMonitor(m, progress_callback) 
+
+        print(f"Uploading {upload_filename} from {fseq_path} to {url}...")
+        
+        # 3. Odoslanie dát. Dáta sú monitor a content_type sa berie z monitora.
+        response = requests.post(
+            url, 
+            data=monitor, 
+            headers={'Content-Type': monitor.content_type, **headers}, 
+            timeout=300
+        )
+        response.raise_for_status()
+        print(f"Successfully uploaded {upload_filename} to {ip} (Status: {response.status_code})")
+        
+        return True
     except Exception as e:
         print(f"HTTP upload failed for {ip}: {e}")
         return False
 
 
-# UPRAVENÁ FUNKCIA pre logiku spracovania
 def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller=None):
     
-    # 0. Inicializácia Job Statusu
     global job_status_file_path
     job_status_file_path = os.path.join(os.path.dirname(output_dir), f"fseq_job_{job_id}.json")
     
-    # Prvotný status
     update_job_status({
         "status": "initializing",
         "progress": 0,
@@ -255,27 +279,24 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
     try:
         os.makedirs(output_dir, exist_ok=True)
         controllers = parse_xlsx(input_xlsx)
-        original_fseq_name = os.path.basename(input_fseq)
         
-        # Ak je zadaný konkrétny kontrolér, prispôsobíme zoznam
         if target_controller:
             controllers_to_process = {target_controller: controllers.get(target_controller)}
             if controllers_to_process.get(target_controller) is None:
                 raise ValueError(f"Controller '{target_controller}' not found in {input_xlsx}")
-            print(f"Processing only controller: {target_controller}")
         else:
             controllers_to_process = controllers
             
         upload_list = {}
-        total_controllers = len([c for c in controllers_to_process.values() if c is not None and c.get('ranges')])
+        total_fseq_controllers = len([c for c in controllers_to_process.values() if c is not None and c.get('ranges')])
         processed_count = 0
         
-        # 1. Vytvorenie odľahčených FSEQ súborov
+        # FÁZA 1: Vytvorenie odľahčených FSEQ súborov (0% - 50%)
         update_job_status({
             "status": "processing",
             "progress": 5,
-            "message": f"Creating {total_controllers} sparse FSEQ files...",
-            "total_controllers": total_controllers,
+            "message": f"Creating {total_fseq_controllers} sparse FSEQ files...",
+            "total_controllers": total_fseq_controllers,
             "current_controller": 0
         })
 
@@ -286,14 +307,14 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                 if info is None or 'ranges' not in info or not info['ranges']:
                     continue
                 
-                # Aktualizácia stavu
                 processed_count += 1
-                progress = 5 + int((processed_count / total_controllers) * 45) # 5% až 50%
+                progress = int((processed_count / total_fseq_controllers) * 45) + 5 # 5% až 50%
+                
                 update_job_status({
                     "status": "processing",
                     "progress": progress,
-                    "message": f"Processing file for: {ctrl_name}",
-                    "total_controllers": total_controllers,
+                    "message": f"Processing file for: {ctrl_name} ({processed_count}/{total_fseq_controllers})",
+                    "total_controllers": total_fseq_controllers,
                     "current_controller": processed_count
                 })
                 
@@ -302,50 +323,83 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                 extracted = extract_data_for_ranges(f, header, ranges)
                 output_path = os.path.join(output_dir, f"{ctrl_name}.fseq")
                 write_sparse_fseq(output_path, header, extracted, ranges)
-                print(f"Created {output_path} for {ctrl_name} ({info['ip']})")
                 upload_list[ctrl_name] = {'ip': info['ip'], 'path': output_path}
 
-        # 2. Nahrávanie (len pre ESPixelStick)
-        print("\nChecking and uploading to ESPixelStick devices...")
-        processed_upload_count = 0
-        total_upload_controllers = len(upload_list)
+        upload_controllers = {k: v for k, v in upload_list.items() 
+                              if 'ESPixelStick' in v.get('ip', '')}
+        total_upload_controllers = len(upload_controllers)
         
-        for ctrl_name, info in upload_list.items():
+        # Status po vytvorení FSEQ súborov (Presne 50%)
+        update_job_status({
+            "status": "processing",
+            "progress": 50,
+            "message": f"Finished FSEQ generation. Starting upload to {total_upload_controllers} devices...",
+            "total_controllers": total_upload_controllers,
+            "current_controller": 0
+        })
+        
+        # FÁZA 2: Nahrávanie (50% - 100%)
+        processed_upload_count = 0
+        original_fseq_name = os.path.basename(input_fseq)
+        
+        for ctrl_name, info in upload_controllers.items():
             ip_full = info['ip']
             output_path = info['path']
-            
-            if 'ESPixelStick' in ip_full:
-                ip = ip_full.split()[0]
+            ip = ip_full.split()[0]
                 
-                # Aktualizácia stavu
-                processed_upload_count += 1
-                progress = 50 + int((processed_upload_count / total_upload_controllers) * 45) # 50% až 95%
+            processed_upload_count += 1
+            
+            if is_device_online(ip):
+                
+                # Nastavenie progressu na začiatku bloku pred nahrávaním
+                progress_start = 50 + int((processed_upload_count - 1) / total_upload_controllers * 49) 
                 update_job_status({
                     "status": "uploading",
-                    "progress": progress,
-                    "message": f"Uploading to: {ctrl_name} ({ip})",
+                    "progress": progress_start,
+                    "message": f"Starting upload to: {ctrl_name} ({ip})...",
                     "total_controllers": total_upload_controllers,
                     "current_controller": processed_upload_count
                 })
 
-                if is_device_online(ip):
-                    if upload_fseq_via_http(ip, output_path, original_fseq_name):
-                        print(f"Successfully uploaded to {ctrl_name}")
-                    else:
-                        print(f"Upload failed for {ctrl_name}")
+                if upload_fseq_via_http(
+                    ip, 
+                    output_path, 
+                    original_fseq_name,
+                    ctrl_name, 
+                    total_upload_controllers, 
+                    processed_upload_count
+                ):
+                    print(f"Successfully uploaded to {ctrl_name}")
                 else:
-                    print(f"{ctrl_name} at {ip} is not online or unreachable")
+                    print(f"Upload failed for {ctrl_name}")
+                    # Ak upload zlyhal, zmena statusu na koniec bloku s chybou
+                    progress_end = 50 + int(processed_upload_count / total_upload_controllers * 49)
+                    update_job_status({
+                        "status": "uploading",
+                        "progress": progress_end,
+                        "message": f"Upload FAILED for: {ctrl_name} ({ip}).",
+                        "total_controllers": total_upload_controllers,
+                        "current_controller": processed_upload_count
+                    })
             else:
-                # Ak to nie je ESPixelStick, iba preskočíme
-                processed_upload_count += 1
-                
+                print(f"{ctrl_name} at {ip} is not online or unreachable")
+                # Ak je zariadenie offline, posuň progress na koniec bloku
+                progress_end = 50 + int(processed_upload_count / total_upload_controllers * 49)
+                update_job_status({
+                    "status": "uploading",
+                    "progress": progress_end,
+                    "message": f"Device OFFLINE: {ctrl_name} ({ip}). Skipping.",
+                    "total_controllers": total_upload_controllers,
+                    "current_controller": processed_upload_count
+                })
+
         # 3. Záverečný status
         update_job_status({
             "status": "complete",
             "progress": 100,
-            "message": "All controllers processed successfully.",
-            "total_controllers": total_controllers,
-            "current_controller": total_controllers
+            "message": "All operations completed successfully.",
+            "total_controllers": total_fseq_controllers,
+            "current_controller": total_fseq_controllers
         })
         
     except ValueError as e:
@@ -368,7 +422,6 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
 
 
 if __name__ == "__main__":
-    # TERAZ POTREBUJEME 4 alebo 5 argumentov + NOVÝ 6. argument: JOB ID
     if len(sys.argv) not in (5, 6):
         print("Usage: python create_sparse_fseq.py input.fseq input.xlsx output_dir JobID [target_controller_name]")
         sys.exit(1)
@@ -376,11 +429,10 @@ if __name__ == "__main__":
     input_fseq = sys.argv[1]
     input_xlsx = sys.argv[2]
     output_dir = sys.argv[3]
-    job_id = sys.argv[4] # NOVÝ Job ID
+    job_id = sys.argv[4]
     
     target_controller = None
     if len(sys.argv) == 6:
         target_controller = sys.argv[5]
-        print(f"Targeting specific controller: {target_controller}")
 
     process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller)
