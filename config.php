@@ -10,55 +10,58 @@ if (!is_dir($outputDir)) {
     mkdir($outputDir, 0777, true);
 }
 
-// Get file lists
-$xlsxFiles = glob($uploadDir . "*.xlsx");
-$fseqFiles = glob($sequencesDir . "*.fseq");
-
 // AJAX endpoint for prop status
 if (isset($_GET['action']) && $_GET['action'] == 'get_status') {
     header('Content-Type: application/json');
     
-    // Read status from JSON file (created by Python script)
     $statusFile = $outputDir . "status.json";
     if (file_exists($statusFile)) {
-        $content = file_get_contents($statusFile);
-        echo $content;
+        echo file_get_contents($statusFile);
     } else {
         echo json_encode([]);
     }
-    exit;
+    exit; // CRITICAL: Stop here, don't render HTML
 }
 
-// Handle form submission
-$processResult = null;
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POST['xlsx'])) {
+// AJAX endpoint for processing
+if (isset($_POST['action']) && $_POST['action'] == 'process') {
+    header('Content-Type: application/json');
+    
     $fseqPath = $sequencesDir . basename($_POST['fseq']);
     $xlsxPath = $uploadDir . basename($_POST['xlsx']);
     
     if (!file_exists($fseqPath)) {
-        $processResult = ['success' => false, 'message' => "FSEQ file not found: $fseqPath"];
-    } elseif (!file_exists($xlsxPath)) {
-        $processResult = ['success' => false, 'message' => "XLSX file not found: $xlsxPath"];
-    } else {
-        // Run Python script
-        $command = "python3 /home/fpp/media/plugins/$pluginName/parse_fseq.py " . 
-                   escapeshellarg($fseqPath) . " " . 
-                   escapeshellarg($xlsxPath) . " " . 
-                   escapeshellarg($outputDir) . " 2>&1";
-        
-        $output = shell_exec($command);
-        
-        $success = !(strpos($output, 'Error') !== false || strpos($output, 'Traceback') !== false);
-        
-        $processResult = [
-            'success' => $success,
-            'message' => $success ? 'Processing completed successfully!' : 'Error occurred during processing',
-            'output' => $output,
-            'fseq' => basename($fseqPath),
-            'xlsx' => basename($xlsxPath)
-        ];
+        echo json_encode(['success' => false, 'message' => "FSEQ file not found: " . basename($fseqPath)]);
+        exit;
     }
+    
+    if (!file_exists($xlsxPath)) {
+        echo json_encode(['success' => false, 'message' => "XLSX file not found: " . basename($xlsxPath)]);
+        exit;
+    }
+    
+    // Run Python script
+    $command = "python3 /home/fpp/media/plugins/$pluginName/parse_fseq.py " . 
+               escapeshellarg($fseqPath) . " " . 
+               escapeshellarg($xlsxPath) . " " . 
+               escapeshellarg($outputDir) . " 2>&1";
+    
+    $output = shell_exec($command);
+    $success = !(strpos($output, 'Error') !== false || strpos($output, 'Traceback') !== false);
+    
+    echo json_encode([
+        'success' => $success,
+        'message' => $success ? 'Processing completed successfully!' : 'Error occurred during processing',
+        'output' => $output,
+        'fseq' => basename($fseqPath),
+        'xlsx' => basename($xlsxPath)
+    ]);
+    exit;
 }
+
+// Get file lists for UI
+$xlsxFiles = glob($uploadDir . "*.xlsx");
+$fseqFiles = glob($sequencesDir . "*.fseq");
 ?>
 <!DOCTYPE html>
 <html>
@@ -178,6 +181,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
             padding: 15px;
             border-radius: 5px;
             margin: 15px 0;
+            animation: slideIn 0.3s;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         .alert.info {
@@ -195,7 +210,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
             border-left: 4px solid #4CAF50;
         }
         
-        /* Device Status Table */
         .device-list {
             width: 100%;
         }
@@ -356,6 +370,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        details {
+            margin-top: 10px;
+            cursor: pointer;
+        }
+        
+        summary {
+            font-weight: 600;
+            padding: 5px;
+            user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -366,22 +391,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
         <p>Distribute FSEQ files to ESPixelStick Props</p>
     </div>
     
-    <?php if ($processResult): ?>
-        <div class="alert <?php echo $processResult['success'] ? 'success' : 'error'; ?>">
-            <strong><?php echo $processResult['success'] ? '✅ Success!' : '❌ Error!'; ?></strong><br>
-            <?php echo htmlspecialchars($processResult['message']); ?><br>
-            <?php if (isset($processResult['fseq'])): ?>
-                <small>FSEQ: <?php echo htmlspecialchars($processResult['fseq']); ?></small><br>
-                <small>XLSX: <?php echo htmlspecialchars($processResult['xlsx']); ?></small>
-            <?php endif; ?>
-            <?php if (isset($processResult['output'])): ?>
-                <details style="margin-top: 10px;">
-                    <summary style="cursor: pointer;">Show details</summary>
-                    <pre><?php echo htmlspecialchars($processResult['output']); ?></pre>
-                </details>
-            <?php endif; ?>
-        </div>
-    <?php endif; ?>
+    <div id="resultMessage"></div>
     
     <div class="grid">
         <!-- Form -->
@@ -395,10 +405,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
                 3. Select files and process
             </div>
             
-            <form method="post" id="uploadForm">
+            <form id="uploadForm" onsubmit="return false;">
                 <div class="form-group">
                     <label>📊 XLSX File (Prop Connections):</label>
-                    <select name="xlsx" required>
+                    <select name="xlsx" id="xlsxSelect" required>
                         <option value="">-- Select file --</option>
                         <?php foreach ($xlsxFiles as $file): ?>
                             <option value="<?php echo htmlspecialchars(basename($file)); ?>">
@@ -413,7 +423,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
                 
                 <div class="form-group">
                     <label>🎵 FSEQ File:</label>
-                    <select name="fseq" required>
+                    <select name="fseq" id="fseqSelect" required>
                         <option value="">-- Select file --</option>
                         <?php foreach ($fseqFiles as $file): ?>
                             <option value="<?php echo htmlspecialchars(basename($file)); ?>">
@@ -426,7 +436,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
                     </select>
                 </div>
                 
-                <button type="submit" class="btn" id="submitBtn">🚀 Upload Show</button>
+                <button type="button" class="btn" id="submitBtn" onclick="processFiles()">🚀 Upload Show</button>
             </form>
         </div>
         
@@ -446,9 +456,71 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['fseq']) && isset($_POS
 </div>
 
 <script>
+function processFiles() {
+    const btn = document.getElementById('submitBtn');
+    const xlsx = document.getElementById('xlsxSelect').value;
+    const fseq = document.getElementById('fseqSelect').value;
+    const resultDiv = document.getElementById('resultMessage');
+    
+    if (!xlsx || !fseq) {
+        resultDiv.innerHTML = '<div class="alert error">❌ Please select both XLSX and FSEQ files</div>';
+        return;
+    }
+    
+    // Disable button
+    btn.disabled = true;
+    btn.innerHTML = '⏳ Processing...';
+    resultDiv.innerHTML = '';
+    
+    // Send AJAX request
+    const formData = new FormData();
+    formData.append('action', 'process');
+    formData.append('xlsx', xlsx);
+    formData.append('fseq', fseq);
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        btn.disabled = false;
+        btn.innerHTML = '🚀 Upload Show';
+        
+        const alertClass = data.success ? 'success' : 'error';
+        const icon = data.success ? '✅' : '❌';
+        
+        let html = `<div class="alert ${alertClass}">
+            <strong>${icon} ${data.message}</strong><br>
+            <small>FSEQ: ${data.fseq}</small><br>
+            <small>XLSX: ${data.xlsx}</small>`;
+        
+        if (data.output) {
+            html += `<details>
+                <summary>Show output details</summary>
+                <pre>${escapeHtml(data.output)}</pre>
+            </details>`;
+        }
+        
+        html += '</div>';
+        resultDiv.innerHTML = html;
+        
+        // Refresh device list
+        refreshDevices();
+    })
+    .catch(error => {
+        btn.disabled = false;
+        btn.innerHTML = '🚀 Upload Show';
+        resultDiv.innerHTML = `<div class="alert error">❌ Error: ${error.message}</div>`;
+    });
+}
+
 function refreshDevices() {
     fetch('?action=get_status')
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error('Network error');
+            return response.json();
+        })
         .then(devices => {
             const container = document.getElementById('device-list');
             
@@ -463,8 +535,8 @@ function refreshDevices() {
                         ${device.status === 'online' ? '✓' : device.status === 'uploading' ? '↑' : '✗'}
                     </div>
                     <div class="device-info">
-                        <div class="device-name">${device.name}</div>
-                        <div class="device-ip">${device.ip}</div>
+                        <div class="device-name">${escapeHtml(device.name)}</div>
+                        <div class="device-ip">${escapeHtml(device.ip)}</div>
                         ${device.status === 'uploading' && device.progress !== undefined ? `
                             <div class="progress-bar">
                                 <div class="progress-fill" style="width: ${device.progress}%"></div>
@@ -488,12 +560,16 @@ function refreshDevices() {
         });
 }
 
-// Disable button during submission
-document.getElementById('uploadForm').addEventListener('submit', function() {
-    const btn = document.getElementById('submitBtn');
-    btn.disabled = true;
-    btn.innerHTML = '⏳ Processing...';
-});
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
 
 // Initial load and auto-refresh every 3 seconds
 refreshDevices();
