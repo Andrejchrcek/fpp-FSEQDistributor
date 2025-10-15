@@ -5,6 +5,12 @@ import openpyxl
 import re
 import socket
 import requests
+import json
+
+status_file = "/home/fpp/media/plugins/fpp-FSEQDistributor/temp/status.json"
+
+def update_status(controller_name, ip, status, progress):
+    pass
 
 def parse_xlsx(file_path):
     wb = openpyxl.load_workbook(file_path, read_only=True)
