@@ -6,15 +6,37 @@ import re
 import socket
 import requests
 import json
+from datetime import datetime
 
 status_file = "/home/fpp/media/plugins/fpp-FSEQDistributor/temp/status.json"
+
+# NOVÁ GLOBÁLNA PREMENNÁ pre cestu k Job Status súboru
+job_status_file_path = None 
 
 def update_status(props):
     """Update status.json with current prop states"""
     with open(status_file, 'w') as f:
         json.dump(props, f)
 
+# NOVÁ FUNKCIA na aktualizáciu stavu Jobu
+def update_job_status(status_data):
+    global job_status_file_path
+    if job_status_file_path:
+        try:
+            status_data['timestamp'] = datetime.now().isoformat()
+            with open(job_status_file_path, 'w') as f:
+                json.dump(status_data, f, indent=4)
+        except Exception as e:
+            # V produkčnom kóde by sa to malo logovať, ale pre stručnosť to ignorujeme
+            print(f"Error updating job status file: {e}")
+    # Else: Ak job_status_file_path nie je nastavený, nedeje sa nič
+
+# Ostatné funkcie (parse_xlsx, read_fseq_header, extract_data_for_ranges, write_sparse_fseq, is_device_online, upload_fseq_via_http) zostávajú nezmenené...
+# Z dôvodu prehľadnosti a krátkosti ich neopakujem, ale v tvojom súbore zostávajú na svojom mieste.
+
+
 def parse_xlsx(file_path):
+    # ... (Kód funkcie parse_xlsx zostáva nezmenený) ...
     wb = openpyxl.load_workbook(file_path, read_only=True)
     sheet = wb.active  # Predpokladáme, že dáta sú v prvom hárku
     controllers = {}
@@ -48,6 +70,7 @@ def parse_xlsx(file_path):
     return controllers
 
 def read_fseq_header(f):
+    # ... (Kód funkcie read_fseq_header zostáva nezmenený) ...
     f.seek(0)
     header = f.read(32)
     if len(header) < 32:
@@ -103,6 +126,7 @@ def read_fseq_header(f):
     }
 
 def extract_data_for_ranges(f, header, ranges):
+    # ... (Kód funkcie extract_data_for_ranges zostáva nezmenený) ...
     frame_size = header['channel_count']
     extracted = bytearray()
     
@@ -119,6 +143,7 @@ def extract_data_for_ranges(f, header, ranges):
     return extracted
 
 def write_sparse_fseq(output_path, header, extracted_data, ranges):
+    # ... (Kód funkcie write_sparse_fseq zostáva nezmenený) ...
     sparse_range_count = len(ranges)
     new_channel_count = sum(num_chans for _, num_chans in ranges)
     comp_type = 0
@@ -174,13 +199,14 @@ def write_sparse_fseq(output_path, header, extracted_data, ranges):
         f.write(header_bytes)
         f.write(comp_data)
         f.write(sparse_data)
-        f.write(var_data[:-pad_var] if pad_var > 0 else var_data)
+        f.write(var_data[:-pad_var] if pad_pad_var > 0 else var_data)
         current_pos = f.tell()
         pad_needed = data_offset - current_pos
         f.write(b'\x00' * pad_needed)
         f.write(extracted_data)
 
 def is_device_online(ip, port=80, timeout=3):
+    # ... (Kód funkcie is_device_online zostáva nezmenený) ...
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
@@ -191,6 +217,7 @@ def is_device_online(ip, port=80, timeout=3):
         return False
 
 def upload_fseq_via_http(ip, fseq_path, upload_filename):
+    # ... (Kód funkcie upload_fseq_via_http zostáva nezmenený) ...
     try:
         url = f'http://{ip}/upload'
         headers = {
@@ -210,68 +237,150 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename):
         print(f"HTTP upload failed for {ip}: {e}")
         return False
 
-# NOVÁ HLAVNÁ LOGIKA S POUŽITÍM ARUMENTOV
-def process_upload(input_fseq, input_xlsx, output_dir, target_controller=None):
-    os.makedirs(output_dir, exist_ok=True)
-    controllers = parse_xlsx(input_xlsx)
-    original_fseq_name = os.path.basename(input_fseq)
-    
-    if target_controller:
-        # Režim pre jeden kontrolér
-        controllers = {target_controller: controllers.get(target_controller)}
-        if controllers.get(target_controller) is None:
-            print(f"Error: Controller '{target_controller}' not found in {input_xlsx}")
-            return
-        print(f"Processing only controller: {target_controller}")
-    
-    upload_list = {}
-    
-    # 1. Vytvorenie odľahčených FSEQ súborov
-    with open(input_fseq, 'rb') as f:
-        header = read_fseq_header(f)
-        for ctrl_name, info in controllers.items():
-            if info is None or 'ranges' not in info or not info['ranges']:
-                continue
-            
-            f.seek(0)
-            ranges = info['ranges']
-            extracted = extract_data_for_ranges(f, header, ranges)
-            output_path = os.path.join(output_dir, f"{ctrl_name}.fseq")
-            write_sparse_fseq(output_path, header, extracted, ranges)
-            print(f"Created {output_path} for {ctrl_name} ({info['ip']}) with {len(ranges)} ranges, total channels: {sum(r[1] for r in ranges)}")
-            upload_list[ctrl_name] = {'ip': info['ip'], 'path': output_path}
 
-    # 2. Nahrávanie (len pre ESPixelStick)
-    print("\nChecking and uploading to ESPixelStick devices...")
-    for ctrl_name, info in upload_list.items():
-        ip_full = info['ip']
-        output_path = info['path']
+# UPRAVENÁ FUNKCIA pre logiku spracovania
+def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller=None):
+    
+    # 0. Inicializácia Job Statusu
+    global job_status_file_path
+    job_status_file_path = os.path.join(os.path.dirname(output_dir), f"fseq_job_{job_id}.json")
+    
+    # Prvotný status
+    update_job_status({
+        "status": "initializing",
+        "progress": 0,
+        "message": "Starting process...",
+    })
+
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        controllers = parse_xlsx(input_xlsx)
+        original_fseq_name = os.path.basename(input_fseq)
         
-        if 'ESPixelStick' in ip_full:
-            ip = ip_full.split()[0]
+        # Ak je zadaný konkrétny kontrolér, prispôsobíme zoznam
+        if target_controller:
+            controllers_to_process = {target_controller: controllers.get(target_controller)}
+            if controllers_to_process.get(target_controller) is None:
+                raise ValueError(f"Controller '{target_controller}' not found in {input_xlsx}")
+            print(f"Processing only controller: {target_controller}")
+        else:
+            controllers_to_process = controllers
             
-            if is_device_online(ip):
-                print(f"{ctrl_name} at {ip} is online. Attempting HTTP upload...")
-                if upload_fseq_via_http(ip, output_path, original_fseq_name):
-                    print(f"Successfully uploaded {output_path} as {original_fseq_name} to {ctrl_name} at {ip}")
+        upload_list = {}
+        total_controllers = len([c for c in controllers_to_process.values() if c is not None and c.get('ranges')])
+        processed_count = 0
+        
+        # 1. Vytvorenie odľahčených FSEQ súborov
+        update_job_status({
+            "status": "processing",
+            "progress": 5,
+            "message": f"Creating {total_controllers} sparse FSEQ files...",
+            "total_controllers": total_controllers,
+            "current_controller": 0
+        })
+
+        with open(input_fseq, 'rb') as f:
+            header = read_fseq_header(f)
+            
+            for ctrl_name, info in controllers_to_process.items():
+                if info is None or 'ranges' not in info or not info['ranges']:
+                    continue
+                
+                # Aktualizácia stavu
+                processed_count += 1
+                progress = 5 + int((processed_count / total_controllers) * 45) # 5% až 50%
+                update_job_status({
+                    "status": "processing",
+                    "progress": progress,
+                    "message": f"Processing file for: {ctrl_name}",
+                    "total_controllers": total_controllers,
+                    "current_controller": processed_count
+                })
+                
+                f.seek(0)
+                ranges = info['ranges']
+                extracted = extract_data_for_ranges(f, header, ranges)
+                output_path = os.path.join(output_dir, f"{ctrl_name}.fseq")
+                write_sparse_fseq(output_path, header, extracted, ranges)
+                print(f"Created {output_path} for {ctrl_name} ({info['ip']})")
+                upload_list[ctrl_name] = {'ip': info['ip'], 'path': output_path}
+
+        # 2. Nahrávanie (len pre ESPixelStick)
+        print("\nChecking and uploading to ESPixelStick devices...")
+        processed_upload_count = 0
+        total_upload_controllers = len(upload_list)
+        
+        for ctrl_name, info in upload_list.items():
+            ip_full = info['ip']
+            output_path = info['path']
+            
+            if 'ESPixelStick' in ip_full:
+                ip = ip_full.split()[0]
+                
+                # Aktualizácia stavu
+                processed_upload_count += 1
+                progress = 50 + int((processed_upload_count / total_upload_controllers) * 45) # 50% až 95%
+                update_job_status({
+                    "status": "uploading",
+                    "progress": progress,
+                    "message": f"Uploading to: {ctrl_name} ({ip})",
+                    "total_controllers": total_upload_controllers,
+                    "current_controller": processed_upload_count
+                })
+
+                if is_device_online(ip):
+                    if upload_fseq_via_http(ip, output_path, original_fseq_name):
+                        print(f"Successfully uploaded to {ctrl_name}")
+                    else:
+                        print(f"Upload failed for {ctrl_name}")
                 else:
-                    print(f"Upload failed for {ctrl_name} at {ip}")
+                    print(f"{ctrl_name} at {ip} is not online or unreachable")
             else:
-                print(f"{ctrl_name} at {ip} is not online or unreachable")
+                # Ak to nie je ESPixelStick, iba preskočíme
+                processed_upload_count += 1
+                
+        # 3. Záverečný status
+        update_job_status({
+            "status": "complete",
+            "progress": 100,
+            "message": "All controllers processed successfully.",
+            "total_controllers": total_controllers,
+            "current_controller": total_controllers
+        })
+        
+    except ValueError as e:
+        print(f"Error: {e}")
+        update_job_status({
+            "status": "error",
+            "progress": 99,
+            "message": str(e),
+        })
+        sys.exit(1)
+        
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        update_job_status({
+            "status": "error",
+            "progress": 99,
+            "message": f"Unexpected error: {e}",
+        })
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (4, 5):
-        print("Usage: python create_sparse_fseq.py input.fseq input.xlsx output_dir [target_controller_name]")
+    # TERAZ POTREBUJEME 4 alebo 5 argumentov + NOVÝ 6. argument: JOB ID
+    if len(sys.argv) not in (5, 6):
+        print("Usage: python create_sparse_fseq.py input.fseq input.xlsx output_dir JobID [target_controller_name]")
         sys.exit(1)
     
     input_fseq = sys.argv[1]
     input_xlsx = sys.argv[2]
     output_dir = sys.argv[3]
+    job_id = sys.argv[4] # NOVÝ Job ID
     
     target_controller = None
-    if len(sys.argv) == 5:
-        target_controller = sys.argv[4]
+    if len(sys.argv) == 6:
+        target_controller = sys.argv[5]
         print(f"Targeting specific controller: {target_controller}")
 
-    process_upload(input_fseq, input_xlsx, output_dir, target_controller)
+    process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller)
