@@ -143,7 +143,6 @@ def extract_data_for_ranges(f, header, ranges):
     return extracted
 
 def write_sparse_fseq(output_path, header, extracted_data, ranges):
-    # ... (Kód funkcie write_sparse_fseq zostáva nezmenený) ...
     sparse_range_count = len(ranges)
     new_channel_count = sum(num_chans for _, num_chans in ranges)
     comp_type = 0
@@ -199,7 +198,8 @@ def write_sparse_fseq(output_path, header, extracted_data, ranges):
         f.write(header_bytes)
         f.write(comp_data)
         f.write(sparse_data)
-        f.write(var_data[:-pad_var] if pad_pad_var > 0 else var_data)
+        # OPRAVA PREKLEPU: Používam 'pad_var' namiesto 'pad_pad_var'
+        f.write(var_data[:-pad_var] if pad_var > 0 else var_data) 
         current_pos = f.tell()
         pad_needed = data_offset - current_pos
         f.write(b'\x00' * pad_needed)
