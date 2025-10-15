@@ -190,7 +190,8 @@ def is_device_online(ip, port=80, timeout=3):
     except:
         return False
 
-def upload_fseq_via_http(ip, fseq_path):
+# ZMENA: Pridaný parameter upload_filename
+def upload_fseq_via_http(ip, fseq_path, upload_filename):
     try:
         url = f'http://{ip}/upload'
         headers = {
@@ -199,11 +200,13 @@ def upload_fseq_via_http(ip, fseq_path):
             'cookie': 'advancedMode=true'
         }
         with open(fseq_path, 'rb') as file:
-            files = {'file': (os.path.basename(fseq_path), file, 'application/octet-stream')}
-            print(f"Uploading {fseq_path} to {url}...")
+            # ZMENA: Použitie upload_filename namiesto os.path.basename(fseq_path)
+            files = {'file': (upload_filename, file, 'application/octet-stream')}
+            
+            print(f"Uploading {upload_filename} from {fseq_path} to {url}...")
             response = requests.post(url, files=files, headers=headers, timeout=300)
             response.raise_for_status()
-            print(f"Successfully uploaded {fseq_path} to {ip} (Status: {response.status_code})")
+            print(f"Successfully uploaded {upload_filename} to {ip} (Status: {response.status_code})")
             return True
     except Exception as e:
         print(f"HTTP upload failed for {ip}: {e}")
@@ -219,6 +222,9 @@ if __name__ == "__main__":
     output_dir = sys.argv[3]
     os.makedirs(output_dir, exist_ok=True)
     
+    # NOVINKA: Získame pôvodný názov FSEQ súboru
+    original_fseq_name = os.path.basename(input_fseq) 
+    
     controllers = parse_xlsx(input_xlsx)
     
     with open(input_fseq, 'rb') as f:
@@ -227,6 +233,7 @@ if __name__ == "__main__":
             ranges = info['ranges']
             if not ranges:
                 continue
+            f.seek(0) # Resetni pozíciu pred extrahovaním ďalšieho kontroléra
             extracted = extract_data_for_ranges(f, header, ranges)
             output_path = os.path.join(output_dir, f"{ctrl_name}.fseq")
             write_sparse_fseq(output_path, header, extracted, ranges)
@@ -240,8 +247,9 @@ if __name__ == "__main__":
             
             if is_device_online(ip):
                 print(f"{ctrl_name} at {ip} is online. Attempting HTTP upload...")
-                if upload_fseq_via_http(ip, output_path):
-                    print(f"Successfully uploaded {output_path} to {ctrl_name} at {ip}")
+                # ZMENA: Volanie funkcie s pôvodným názvom súboru
+                if upload_fseq_via_http(ip, output_path, original_fseq_name):
+                    print(f"Successfully uploaded {output_path} as {original_fseq_name} to {ctrl_name} at {ip}")
                 else:
                     print(f"Upload failed for {ctrl_name} at {ip}")
             else:
