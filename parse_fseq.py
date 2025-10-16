@@ -207,6 +207,7 @@ def is_device_online(ip, port=80, timeout=3):
         return False
 
 # OPRAVENÁ FUNKCIA NA NAHRÁVANIE S MONITOROM (kompatibilná so staršou verziou)
+# ÚPRAVA VO FUNKCII upload_fseq_via_http pre nový rozsah (5% - 99%)
 def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_uploads, current_upload_index):
     try:
         url = f'http://{ip}/upload'
@@ -223,10 +224,11 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
             if monitor.len:
                 local_progress = monitor.bytes_read / monitor.len
                 
-                # Výpočet globálneho progressu v rozsahu 50% až 99%
-                chunk_progress = 49 / total_uploads
+                # Výpočet globálneho progressu v rozsahu 5% až 99% (rozsah 94%)
+                progress_range = 94
+                chunk_progress = progress_range / total_uploads
                 
-                global_progress_base = 50 + (current_upload_index - 1) * chunk_progress
+                global_progress_base = 5 + (current_upload_index - 1) * chunk_progress
                 global_progress = global_progress_base + (local_progress * chunk_progress)
 
                 global_progress = min(global_progress, 99) 
@@ -244,7 +246,7 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
             fields={'file': (upload_filename, open(fseq_path, 'rb'), 'application/octet-stream')}
         )
 
-        # 2. Zabaliť ho do monitoru (použitie staršej metódy bez 'callback' argumentu)
+        # 2. Zabaliť ho do monitoru
         monitor = MultipartEncoderMonitor(m, progress_callback) 
 
         print(f"Uploading {upload_filename} from {fseq_path} to {url}...")
@@ -263,7 +265,6 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
     except Exception as e:
         print(f"HTTP upload failed for {ip}: {e}")
         return False
-
 
 def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller=None):
     
