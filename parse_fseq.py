@@ -291,11 +291,12 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
         total_fseq_controllers = len([c for c in controllers_to_process.values() if c is not None and c.get('ranges')])
         processed_count = 0
         
-        # FÁZA 1: Vytvorenie odľahčených FSEQ súborov (0% - 50%)
+        # FÁZA 1: Vytvorenie odľahčených FSEQ súborov (0% - 5%)
+        # Teraz je to len 5% z celkového rozsahu
         update_job_status({
             "status": "processing",
-            "progress": 5,
-            "message": f"Creating {total_fseq_controllers} sparse FSEQ files...",
+            "progress": 1,
+            "message": f"Creating {total_fseq_controllers} sparse FSEQ files (quick step)...",
             "total_controllers": total_fseq_controllers,
             "current_controller": 0
         })
@@ -308,7 +309,8 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                     continue
                 
                 processed_count += 1
-                progress = int((processed_count / total_fseq_controllers) * 45) + 5 # 5% až 50%
+                # Progress ide od 1% do 5%
+                progress = int((processed_count / total_fseq_controllers) * 4) + 1 
                 
                 update_job_status({
                     "status": "processing",
@@ -329,16 +331,16 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                               if 'ESPixelStick' in v.get('ip', '')}
         total_upload_controllers = len(upload_controllers)
         
-        # Status po vytvorení FSEQ súborov (Presne 50%)
+        # Status po vytvorení FSEQ súborov (Presne 5%)
         update_job_status({
             "status": "processing",
-            "progress": 50,
-            "message": f"Finished FSEQ generation. Starting upload to {total_upload_controllers} devices...",
+            "progress": 5,
+            "message": f"Finished FSEQ generation. Starting upload to {total_upload_controllers} devices (main step)...",
             "total_controllers": total_upload_controllers,
             "current_controller": 0
         })
         
-        # FÁZA 2: Nahrávanie (50% - 100%)
+        # FÁZA 2: Nahrávanie (5% - 100%)
         processed_upload_count = 0
         original_fseq_name = os.path.basename(input_fseq)
         
@@ -352,7 +354,9 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
             if is_device_online(ip):
                 
                 # Nastavenie progressu na začiatku bloku pred nahrávaním
-                progress_start = 50 + int((processed_upload_count - 1) / total_upload_controllers * 49) 
+                # Celý rozsah nahrávania je teraz 94% (99% - 5%)
+                progress_range = 94 
+                progress_start = 5 + int((processed_upload_count - 1) / total_upload_controllers * progress_range) 
                 update_job_status({
                     "status": "uploading",
                     "progress": progress_start,
@@ -373,7 +377,7 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                 else:
                     print(f"Upload failed for {ctrl_name}")
                     # Ak upload zlyhal, zmena statusu na koniec bloku s chybou
-                    progress_end = 50 + int(processed_upload_count / total_upload_controllers * 49)
+                    progress_end = 5 + int(processed_upload_count / total_upload_controllers * progress_range)
                     update_job_status({
                         "status": "uploading",
                         "progress": progress_end,
@@ -384,7 +388,7 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
             else:
                 print(f"{ctrl_name} at {ip} is not online or unreachable")
                 # Ak je zariadenie offline, posuň progress na koniec bloku
-                progress_end = 50 + int(processed_upload_count / total_upload_controllers * 49)
+                progress_end = 5 + int(processed_upload_count / total_upload_controllers * progress_range)
                 update_job_status({
                     "status": "uploading",
                     "progress": progress_end,
@@ -408,6 +412,15 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
             "status": "error",
             "progress": 99,
             "message": str(e),
+        })
+        sys.exit(1)
+        
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        update_job_status({
+            "status": "error",
+            "progress": 99,
+            "message": f"Unexpected error: {e}",
         })
         sys.exit(1)
         
