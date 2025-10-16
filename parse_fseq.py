@@ -277,6 +277,9 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
         "message": "Starting process...",
     })
 
+    # NOVÁ PREMENNÁ na sledovanie zlyhania
+    any_upload_failed = False 
+
     try:
         os.makedirs(output_dir, exist_ok=True)
         controllers = parse_xlsx(input_xlsx)
@@ -293,7 +296,6 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
         processed_count = 0
         
         # FÁZA 1: Vytvorenie odľahčených FSEQ súborov (0% - 5%)
-        # Teraz je to len 5% z celkového rozsahu
         update_job_status({
             "status": "processing",
             "progress": 1,
@@ -310,7 +312,6 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                     continue
                 
                 processed_count += 1
-                # Progress ide od 1% do 5%
                 progress = int((processed_count / total_fseq_controllers) * 4) + 1 
                 
                 update_job_status({
@@ -354,10 +355,7 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
             
             if is_device_online(ip):
                 
-                # Nastavenie progressu na začiatku bloku pred nahrávaním
-                # Celý rozsah nahrávania je teraz 94% (99% - 5%)
-                progress_range = 94 
-                progress_start = 5 + int((processed_upload_count - 1) / total_upload_controllers * progress_range) 
+                progress_start = 5 + int((processed_upload_count - 1) / total_upload_controllers * 94) 
                 update_job_status({
                     "status": "uploading",
                     "progress": progress_start,
@@ -366,19 +364,23 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                     "current_controller": processed_upload_count
                 })
 
-                if upload_fseq_via_http(
+                upload_successful = upload_fseq_via_http( # Prijmi výsledok
                     ip, 
                     output_path, 
                     original_fseq_name,
                     ctrl_name, 
                     total_upload_controllers, 
                     processed_upload_count
-                ):
+                )
+                
+                if upload_successful:
                     print(f"Successfully uploaded to {ctrl_name}")
                 else:
+                    # NASTAVENIE FLAU, AK UPLOAD ZLYHAL
+                    any_upload_failed = True 
                     print(f"Upload failed for {ctrl_name}")
-                    # Ak upload zlyhal, zmena statusu na koniec bloku s chybou
-                    progress_end = 5 + int(processed_upload_count / total_upload_controllers * progress_range)
+                    
+                    progress_end = 5 + int(processed_upload_count / total_upload_controllers * 94)
                     update_job_status({
                         "status": "uploading",
                         "progress": progress_end,
@@ -387,9 +389,11 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                         "current_controller": processed_upload_count
                     })
             else:
+                # NASTAVENIE FLAU, AK JE ZARIADENIE OFFLINE
+                any_upload_failed = True 
                 print(f"{ctrl_name} at {ip} is not online or unreachable")
-                # Ak je zariadenie offline, posuň progress na koniec bloku
-                progress_end = 5 + int(processed_upload_count / total_upload_controllers * progress_range)
+                
+                progress_end = 5 + int(processed_upload_count / total_upload_controllers * 94)
                 update_job_status({
                     "status": "uploading",
                     "progress": progress_end,
@@ -399,10 +403,18 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                 })
 
         # 3. Záverečný status
+        final_message = "All operations completed successfully."
+        final_status = "complete"
+
+        # KONTROLA ZLYHANIA PRED ZÁPISOM FINÁLNEHO STATUSU
+        if any_upload_failed:
+            final_status = "error"
+            final_message = "One or more uploads failed."
+
         update_job_status({
-            "status": "complete",
+            "status": final_status,
             "progress": 100,
-            "message": "All operations completed successfully.",
+            "message": final_message,
             "total_controllers": total_fseq_controllers,
             "current_controller": total_fseq_controllers
         })
@@ -413,15 +425,6 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
             "status": "error",
             "progress": 99,
             "message": str(e),
-        })
-        sys.exit(1)
-        
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        update_job_status({
-            "status": "error",
-            "progress": 99,
-            "message": f"Unexpected error: {e}",
         })
         sys.exit(1)
         
