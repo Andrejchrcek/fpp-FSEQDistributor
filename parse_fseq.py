@@ -206,8 +206,7 @@ def is_device_online(ip, port=80, timeout=3):
     except:
         return False
 
-# OPRAVENÁ FUNKCIA NA NAHRÁVANIE S MONITOROM (kompatibilná so staršou verziou)
-# ÚPRAVA VO FUNKCII upload_fseq_via_http pre nový rozsah (5% - 99%)
+# UPRAVENÁ FUNKCIA NA NAHRÁVANIE S MONITOROM
 def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_uploads, current_upload_index):
     try:
         url = f'http://{ip}/upload'
@@ -224,7 +223,6 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
             if monitor.len:
                 local_progress = monitor.bytes_read / monitor.len
                 
-                # Výpočet globálneho progressu v rozsahu 5% až 99% (rozsah 94%)
                 progress_range = 94
                 chunk_progress = progress_range / total_uploads
                 
@@ -241,17 +239,14 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
                     "current_controller": current_upload_index
                 })
         
-        # 1. Vytvorenie základného MultipartEncoder
         m = MultipartEncoder(
             fields={'file': (upload_filename, open(fseq_path, 'rb'), 'application/octet-stream')}
         )
 
-        # 2. Zabaliť ho do monitoru
         monitor = MultipartEncoderMonitor(m, progress_callback) 
 
         print(f"Uploading {upload_filename} from {fseq_path} to {url}...")
         
-        # 3. Odoslanie dát. Dáta sú monitor a content_type sa berie z monitora.
         response = requests.post(
             url, 
             data=monitor, 
@@ -262,8 +257,23 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
         print(f"Successfully uploaded {upload_filename} to {ip} (Status: {response.status_code})")
         
         return True
+        
     except Exception as e:
         print(f"HTTP upload failed for {ip}: {e}")
+        
+        # NOVÁ LOGIKA: Uvoľnenie progress baru pri zlyhaní
+        progress_range = 94
+        chunk_progress = progress_range / total_uploads
+        progress_end = 5 + (current_upload_index * chunk_progress) # Nastaví progress na koniec tohto bloku
+        
+        update_job_status({
+            "status": "uploading",
+            "progress": int(progress_end),
+            "message": f"Upload FAILED for: {ctrl_name} ({ip}). Error: {e}",
+            "total_controllers": total_uploads,
+            "current_controller": current_upload_index
+        })
+        
         return False
 
 def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller=None):
