@@ -251,7 +251,7 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
             url, 
             data=monitor, 
             headers={'Content-Type': monitor.content_type, **headers}, 
-            timeout=300
+            timeout=10
         )
         response.raise_for_status()
         print(f"Successfully uploaded {upload_filename} to {ip} (Status: {response.status_code})")
