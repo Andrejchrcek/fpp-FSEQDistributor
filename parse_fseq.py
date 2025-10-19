@@ -43,10 +43,17 @@ def parse_xlsx(file_path):
         if not line:
             continue
 
-        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*$', line)
+        # UPRAVENÝ REGEX: 
+        # Group 1: Názov (.*?)
+        # Group 2: Typ (DDP|ESPixelStick.*?)
+        # Group 3: IP Adresa (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})
+        # .*: Ignoruje všetko, čo nasleduje za IP adresou, ale umožňuje riadku sa zhodovať.
+        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*?) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*$', line)
         if controller_match:
             current_controller = controller_match.group(1).strip()
+            # Zoberieme IP adresu priamo z Group 3 (očistenú od zvyšku)
             current_ip = controller_match.group(3).strip()
+            # Uložíme čistú IP adresu
             controllers[current_controller] = {'ip': current_ip, 'ranges': []}
             continue
 
@@ -337,10 +344,12 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                 extracted = extract_data_for_ranges(f, header, ranges)
                 output_path = os.path.join(output_dir, f"{ctrl_name}.fseq")
                 write_sparse_fseq(output_path, header, extracted, ranges)
+                # Uložíme čistú IP adresu a cestu k súboru.
                 upload_list[ctrl_name] = {'ip': info['ip'], 'path': output_path}
 
-        upload_controllers = {k: v for k, v in upload_list.items() 
-                              if 'ESPixelStick' in v.get('ip', '')}
+
+        # ODSTRÁNENÝ FILTER: Teraz sa v upload_controllers nachádzajú VŠETKY kontroléry.
+        upload_controllers = upload_list 
         total_upload_controllers = len(upload_controllers)
         
         # Status po vytvorení FSEQ súborov (Presne 5%)
@@ -357,10 +366,10 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
         original_fseq_name = os.path.basename(input_fseq)
         
         for ctrl_name, info in upload_controllers.items():
-            ip_full = info['ip']
+            # IP adresa už je očistená vo funkcii parse_xlsx
+            ip = info['ip'] 
             output_path = info['path']
-            ip = ip_full.split()[0]
-                
+            
             processed_upload_count += 1
             
             if is_device_online(ip):
