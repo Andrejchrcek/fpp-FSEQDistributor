@@ -340,7 +340,7 @@ def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller
                 upload_list[ctrl_name] = {'ip': info['ip'], 'path': output_path}
 
         upload_controllers = {k: v for k, v in upload_list.items() 
-                              if v.get('ip') and v.get('ranges')}
+                              if 'ESPixelStick' in v.get('ip', '')}
         total_upload_controllers = len(upload_controllers)
         
         # Status po vytvorení FSEQ súborov (Presne 5%)
