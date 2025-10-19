@@ -43,7 +43,7 @@ def parse_xlsx(file_path):
         if not line:
             continue
 
-        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*) (.*)$', line)
+        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*$', line)
         if controller_match:
             current_controller = controller_match.group(1).strip()
             current_ip = controller_match.group(3).strip()
