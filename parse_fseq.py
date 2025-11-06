@@ -6,6 +6,7 @@ import re
 import socket
 import requests
 import json
+import glob
 from datetime import datetime
 # POTREBNÉ IMPORTY PRE PROGRESS TRACKING
 from requests_toolbelt.multipart.encoder import MultipartEncoder
@@ -286,6 +287,29 @@ def upload_fseq_via_http(ip, fseq_path, upload_filename, ctrl_name, total_upload
         return False
 
 def process_upload(input_fseq, input_xlsx, output_dir, job_id, target_controller=None):
+
+    # ----------------------------------------------------
+    # ZAČIATOK NOVÉHO KÓDU: VYMAŽE VŠETKO Z 'output_dir'
+    # ----------------------------------------------------
+    print(f"Cleaning up ALL files in: {output_dir}")
+
+    # Nájdi VŠETKY súbory v adresári
+    files_to_delete = glob.glob(os.path.join(output_dir, "*"))
+
+    deleted_count = 0
+    for f_path in files_to_delete:
+        try:
+            # Mazeme len súbory, nie podadresáre (pre istotu)
+            if os.path.isfile(f_path):
+                os.remove(f_path)
+                deleted_count += 1
+        except Exception as e:
+            print(f"Warning: Failed to delete old file {f_path}. Error: {e}")
+
+    print(f"Cleanup complete. Deleted {deleted_count} files.")
+    # ----------------------------------------------------
+    # KONIEC NOVÉHO KÓDU
+    # ----------------------------------------------------
     
     global job_status_file_path
     job_status_file_path = os.path.join(os.path.dirname(output_dir), f"fseq_job_{job_id}.json")
