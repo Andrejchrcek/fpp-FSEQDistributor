@@ -48,7 +48,9 @@ def parse_xlsx(file_path):
         # Group 2: Typ (DDP|ESPixelStick.*?)
         # Group 3: IP Adresa (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})
         # .*: Ignoruje všetko, čo nasleduje za IP adresou, ale umožňuje riadku sa zhodovať.
-        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*?) (\S+).*$', line)
+        # TOTO JE TVOJ PÔVODNÝ, NESPRÁVNY RIADOK:
+        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*?) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*$', line)
+        #controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*?) (\S+).*$', line) #cita aj hostname ale nefunguje lebo FPP nevie ktora ip je ktory hostname
         if controller_match:
             current_controller = controller_match.group(1).strip()
             # Zoberieme IP adresu priamo z Group 3 (očistenú od zvyšku)
