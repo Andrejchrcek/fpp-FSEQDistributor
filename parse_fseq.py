@@ -48,7 +48,7 @@ def parse_xlsx(file_path):
         # Group 2: Typ (DDP|ESPixelStick.*?)
         # Group 3: IP Adresa (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})
         # .*: Ignoruje všetko, čo nasleduje za IP adresou, ale umožňuje riadku sa zhodovať.
-        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*?) (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*$', line)
+        controller_match = re.match(r'^(.*?) (DDP|ESPixelStick.*?) (\S+).*$', line)
         if controller_match:
             current_controller = controller_match.group(1).strip()
             # Zoberieme IP adresu priamo z Group 3 (očistenú od zvyšku)
